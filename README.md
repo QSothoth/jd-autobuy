@@ -4,6 +4,8 @@
 Python爬虫，自动登录京东网站，查询商品库存，价格，显示购物车详情等。<br/>
 可以指定购买或者抢购预约过的商品，自动购买下单，然后手动去京东付款就行。
 
+https://github.com/tiaroy/gittest/blob/062418601fcd0314593858d74bb91a48e879f3a9/test1/Deployment.txt
+https://github.com/xtuyaowu/jtyd_python_spider/blob/ca5c3efd5519f592c0d587c22f03812e7756c8ea/celery_tasks/jd_seckill/jd_seckill.py
 
 ## chang log
 + 2017-03-30 实现二维码扫码登陆
