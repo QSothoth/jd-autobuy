@@ -512,39 +512,80 @@ class JDWrapper(object):
         return price
 
     def buy(self, options):
-        if options.mode == 'qianggou':
-            # qianggou mode, no need to check stock
-            payload = {
-                'sku': options.good
-            }
+        if options.mode == 'seckill':
             try:
-                resp = self.sess.get("http://yushou.jd.com/youshouinfo.action", cookies=self.cookies,
-                                     params=payload)
-                # 未开始时会返回错误信息{"error":"pss info is null"}
-                if str(resp.text).find("error") != -1:
-                    print u'{0} > 抢购未开始'.format(time.ctime())
-                    return False
-                yushou_info = json.loads(resp.text)
-                qianggou_url = yushou_info['url']
-                print yushou_info
-                resp = self.sess.get("http:" + str(qianggou_url), cookies=self.cookies)
-                if str(resp.text).find("您已成功预约过了，无需重复预约") != -1:
-                    print u'{0} > 已经成功预约，但抢购未开始'.format(time.ctime())
-                    return False
-                soup = bs4.BeautifulSoup(resp.text, "html.parser")
-                tag = soup.select('h3.ftx-02')
-                if tag is None or len(tag) < 1:
-                    print u'{0} > 抢购商品，添加购物车失败'.format(time.ctime())
+                # seckill mode, no need to check stock
+                millis = int(round(time.time() * 1000))
+                # 点击立即抢购按钮
+                btn_resp = self.sess.get("https://itemko.jd.com/itemShowBtn?skuId={0}&callback=jQuery2002005&_={1}"
+                                         .format(options.good, millis), cookies=self.cookies)
+                divide_url = (json.loads(str(btn_resp.text.strip())[14:-1]))['url']
+                # temp
+                # divide_url = '//divide.jd.com/user_routing?skuId=4993737&sn=3e8d5aef4efdf10d67295ae092931411&from=pc'
+                if len(divide_url) < 1 or divide_url.find("divide.jd.com/user_routing?skuId") == -1:
+                    print u'divide_url 返回错误', btn_resp.text
                     return False
                 else:
-                    print u'{0} > 抢购商品，添加购物车成功'.format(time.ctime())
-                    self.cart_detail()
-                    if options.count > 1:
-                        self.buy_good_count(options.good, options.count)
-                    return self.order_info(options.submit)
-                # change count
+                    user_rout_resp = self.sess.get("http:" + divide_url, cookies=self.cookies)
+                    # print "http:" + divide_url, user_rout_resp.text
+                    # 重定向流程
+                    # https://marathon.jd.com/captcha.html?from=pc&skuId=3822020&sn=fa8b858a4d60c76d04d1184469383af9
+                    # https://marathon.jd.com/seckill/seckill.action?skuId=3822020&num=1&rid=1510316327
+                    # 获取地址
+                    addr_resp = self.sess.get(
+                        'https://marathon.jd.com/async/getUsualAddressList.action?skuId=' + options.good,
+                        cookies=self.cookies, verify=False)
+                    if not addr_resp.text or "https://marathon.jd.com/koFail.html" in addr_resp.text:
+                        print u"addr resp 没有地址", addr_resp.text
+                        return False
+                    if '登录' in addr_resp.text:
+                        print u"获取地址 cookies失效"
+                        return False
+
+                    address_list = json.loads(addr_resp.text)
+                    if len(address_list) > 0:
+                        address_dict = address_list[0]
+                        if 'addressDetail' not in address_dict:
+                            print u"没有addressDetail", addr_resp.text
+                            return False
+
+                        # todo 秒杀 参数需要确认
+                        submit_resp = self.sess.post(
+                            'https://marathon.jd.com/seckill/submitOrder.action?skuId=' + options.good + '&vid= HTTP/1.1',
+                            data={'orderParam.name': address_dict['name'],
+                                  'orderParam.addressDetail': address_dict['addressDetail'],
+                                  'orderParam.mobile': address_dict['mobileWithXing'],
+                                  'orderParam.email': address_dict['email'],
+                                  'orderParam.provinceId': address_dict['provinceId'],
+                                  'orderParam.cityId': address_dict['cityId'],
+                                  'orderParam.countyId': address_dict['countyId'],
+                                  'orderParam.townId': address_dict['townId'],
+                                  'orderParam.paymentType': 4,
+                                  'orderParam.password': '',
+                                  'orderParam.invoiceTitle': 4,
+                                  'orderParam.invoiceContent': 1,
+                                  'orderParam.invoiceCompanyName': '',
+                                  'orderParam.invoiceTaxpayerNO': '',
+                                  'orderParam.usualAddressId': address_dict['id'],
+                                  'skuId': options.good,
+                                  'num': options.count,
+                                  'orderParam.provinceName': address_dict['provinceName'],
+                                  'orderParam.cityName': address_dict['cityName'],
+                                  'orderParam.countyName': address_dict['countyName'],
+                                  'orderParam.townName': address_dict['townName'],
+                                  'orderParam.codTimeType': 3,
+                                  'orderParam.mobileKey': address_dict['mobileKey'],
+                                  # 'eid': jd_user_json['eid'],
+                                  # 'fp': jd_user_json['fp']
+                                  }, cookies=self.cookies)
+                        # 秒杀返回校验
+                        if "//marathon.jd.com/koFail.html" in submit_resp.text:
+                            print u"秒杀提交失败", submit_resp.text
+                            return False
+                        else:
+                            print u"秒杀成功"
             except Exception, e:
-                print u'{0} > 抢购商品失败'.format(time.ctime())
+                print u'{0} > 秒杀失败'.format(time.ctime())
                 print 'Exp {0} : {1}'.format(FuncName(), e)
                 return False
 
@@ -735,8 +776,9 @@ def main(options):
 
     good_data = jd.good_detail(options.good)
     print u'<%s> <%s>' % (good_data['stockName'], good_data['name'])
-    print u'输入回车开始抢购'
-    raw_input()
+    if not options.quick:
+        print u'输入回车开始抢购'
+        raw_input()
 
     while not jd.buy(options) and options.flush:
         time.sleep(options.wait / 1000.0)
@@ -762,48 +804,58 @@ if __name__ == '__main__':
                         action='store_true',
                         help='Continue flash if good out of stock')
     parser.add_argument('-m', '--mode',
-                        help='Purchashe mode, normal or qianggou', default='qianggou')
+                        help='Purchashe mode, normal or seckill', default='seckill')
     parser.add_argument('-s', '--submit',
                         action='store_true',
                         help='Submit the order to Jing Dong')
+    parser.add_argument('-q', '--quick',
+                        action='store_true',
+                        help='quick run')
 
     # raw input
     options = parser.parse_args()
     options.flush = True
     options.submit = True
 
-    print u"""
-    使用须知：
-    1. 请打开京东app，去除购物车中的选中商品（否则将会和抢购商品一同提交订单）
-    2. 回到app首页，准备使用扫码登录
-    """
-    print u'请输入商品ID(默认4993737):'
-    input_good_id = raw_input()
-    if len(input_good_id) > 0:
-        options.good = input_good_id
+    # quick
+    options.good = '4993737'
+    options.mode = 'seckill'
+    options.count = 1
+    options.wait = 50
+    options.quick = True
 
-    print u'请输入购买模式，正常模式（normal），抢购模式（qianggou），默认采用抢购模式'
-    flag = True
-    while flag:
-        input_mode = raw_input()
-        if input_mode in ('normal', 'qianggou'):
-            options.mode = input_mode
-            flag = False
-        elif len(input_mode) == 0:
-            print u'采用默认抢购模式'
-            flag = False
-        else:
-            print u'请输入购买模式，正常模式（normal），抢购模式（qianggou），默认采用抢购模式'
-
-    print u'请输入购买数目(默认为1): '
-    input_good_count = raw_input()
-    if len(input_good_count) > 0:
-        options.count = int(input_good_count)
-
-    print u'请输入每次抢购的间隔时间(单位ms，默认为500ms): '
-    input_wait = raw_input()
-    if len(input_wait) > 0:
-        options.wait = int(input_wait)
+    # print u"""
+    # 使用须知：
+    # 1. 请打开京东app，去除购物车中的选中商品（否则将会和抢购商品一同提交订单）
+    # 2. 回到app首页，准备使用扫码登录
+    # """
+    # print u'请输入商品ID(默认4993737):'
+    # input_good_id = raw_input()
+    # if len(input_good_id) > 0:
+    #     options.good = input_good_id
+    #
+    # print u'请输入购买模式，正常模式（normal），秒杀模式（seckill），默认采用秒杀模式'
+    # flag = True
+    # while flag:
+    #     input_mode = raw_input()
+    #     if input_mode in ('normal', 'seckill'):
+    #         options.mode = input_mode
+    #         flag = False
+    #     elif len(input_mode) == 0:
+    #         print u'采用默认秒杀模式'
+    #         flag = False
+    #     else:
+    #         print u'请输入购买模式，正常模式（normal），秒杀模式（seckill），默认采用秒杀模式'
+    #
+    # print u'请输入购买数目(默认为1): '
+    # input_good_count = raw_input()
+    # if len(input_good_count) > 0:
+    #     options.count = int(input_good_count)
+    #
+    # print u'请输入每次抢购的间隔时间(单位ms，默认为500ms): '
+    # input_wait = raw_input()
+    # if len(input_wait) > 0:
+    #     options.wait = int(input_wait)
 
     # TODO 添加定时执行功能、重新增加账号密码登录、session有效期测试等
     main(options)
