@@ -12,6 +12,7 @@ username / password is not working now.
 import bs4
 import requests
 import requests.packages.urllib3
+import emailUtils
 
 requests.packages.urllib3.disable_warnings()
 
@@ -320,9 +321,22 @@ class JDWrapper(object):
             with open(image_file, 'wb') as f:
                 for chunk in resp.iter_content(chunk_size=1024):
                     f.write(chunk)
-
-            ## scan QR code with phone
-            os.system('start ' + image_file)
+            ## deal QR code
+            try:
+                emailUtils.send_email(u'QRcode', str(emailUtils.receivers), image_file)
+                ## scan QR code with phone
+                if os.name == "nt":
+                    # for windows
+                    os.system('start ' + image_file)
+                else:
+                    if os.uname()[0] == "Linux":
+                        # for linux platform
+                        os.system("eog " + image_file)
+                    else:
+                        # for Mac platform
+                        os.system("open " + image_file)
+            except Exception, e:
+                print e
 
             # step 3： check scan result
             ## mush have
@@ -818,11 +832,12 @@ if __name__ == '__main__':
     options.submit = True
 
     # quick
+    # goods['4993737', '4993773', '4993751']
     options.good = '4993737'
     options.mode = 'seckill'
     options.count = 1
-    options.wait = 50
-    options.quick = True
+    options.wait = 500
+    options.quick = False
 
     # print u"""
     # 使用须知：
