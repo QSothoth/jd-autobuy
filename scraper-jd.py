@@ -12,12 +12,13 @@ username / password is not working now.
 import bs4
 import requests
 import requests.packages.urllib3
-import emailUtils
+# import emailUtils
 
 requests.packages.urllib3.disable_warnings()
 
 import os
 import time
+from calendar import timegm
 import json
 import random
 
@@ -322,8 +323,8 @@ class JDWrapper(object):
                 for chunk in resp.iter_content(chunk_size=1024):
                     f.write(chunk)
             ## deal QR code
+            # emailUtils.send_email(u'QRcode', str(emailUtils.receivers), image_file)
             try:
-                emailUtils.send_email(u'QRcode', str(emailUtils.receivers), image_file)
                 ## scan QR code with phone
                 if os.name == "nt":
                     # for windows
@@ -537,7 +538,7 @@ class JDWrapper(object):
                 # temp
                 # divide_url = '//divide.jd.com/user_routing?skuId=4993737&sn=3e8d5aef4efdf10d67295ae092931411&from=pc'
                 if len(divide_url) < 1 or divide_url.find("divide.jd.com/user_routing?skuId") == -1:
-                    print u'divide_url 返回错误', btn_resp.text
+                    print u'{0} > divide_url 返回错误'.format(time.ctime()), btn_resp.text
                     return False
                 else:
                     user_rout_resp = self.sess.get("http:" + divide_url, cookies=self.cookies)
@@ -550,17 +551,17 @@ class JDWrapper(object):
                         'https://marathon.jd.com/async/getUsualAddressList.action?skuId=' + options.good,
                         cookies=self.cookies, verify=False)
                     if not addr_resp.text or "https://marathon.jd.com/koFail.html" in addr_resp.text:
-                        print u"addr resp 没有地址", addr_resp.text
+                        print u"{0} > addr resp 没有地址".format(time.ctime()), addr_resp.text
                         return False
                     if '登录' in addr_resp.text:
-                        print u"获取地址 cookies失效"
+                        print u"{0} > 获取地址 cookies失效".format(time.ctime())
                         return False
 
                     address_list = json.loads(addr_resp.text)
                     if len(address_list) > 0:
                         address_dict = address_list[0]
                         if 'addressDetail' not in address_dict:
-                            print u"没有addressDetail", addr_resp.text
+                            print u"{0} > 没有addressDetail".format(time.ctime()), addr_resp.text
                             return False
 
                         # todo 秒杀 参数需要确认
@@ -597,7 +598,7 @@ class JDWrapper(object):
                             print u"秒杀提交失败", submit_resp.text
                             return False
                         else:
-                            print u"秒杀成功"
+                            print u"{0} > 秒杀成功".format(time.ctime())
             except Exception, e:
                 print u'{0} > 秒杀失败'.format(time.ctime())
                 print 'Exp {0} : {1}'.format(FuncName(), e)
@@ -793,6 +794,15 @@ def main(options):
     if not options.quick:
         print u'输入回车开始抢购'
         raw_input()
+    # Add timer
+    print u'timer', options.timer, options.delay
+    t_stamp = long(timegm((time.strptime(options.timer, '%Y-%m-%d %H:%M:%S'))) - 28800) * 1000
+    timer_flag = True
+    while timer_flag:
+        if long(round(time.time() * 1000)) > t_stamp - options.delay:
+            print u'OK', long(round(time.time() * 1000))
+            timer_flag = False
+    print u"start".format(time.ctime())
 
     while not jd.buy(options) and options.flush:
         time.sleep(options.wait / 1000.0)
@@ -836,18 +846,21 @@ if __name__ == '__main__':
     options.good = '4993737'
     options.mode = 'seckill'
     options.count = 1
-    options.wait = 500
-    options.quick = False
+    options.wait = 50
+    options.quick = True
+    options.timer = '2017-11-28 10:00:00'
+    options.delay = 38
 
-    # print u"""
-    # 使用须知：
-    # 1. 请打开京东app，去除购物车中的选中商品（否则将会和抢购商品一同提交订单）
-    # 2. 回到app首页，准备使用扫码登录
-    # """
-    # print u'请输入商品ID(默认4993737):'
-    # input_good_id = raw_input()
-    # if len(input_good_id) > 0:
-    #     options.good = input_good_id
+
+    print u"""
+    使用须知：
+    1. 请打开京东app，去除购物车中的选中商品（否则将会和抢购商品一同提交订单）
+    2. 回到app首页，准备使用扫码登录
+    """
+    print u'请输入商品ID(4993737,4993773,4993751):'
+    input_good_id = raw_input()
+    if len(input_good_id) > 0:
+        options.good = input_good_id
     #
     # print u'请输入购买模式，正常模式（normal），秒杀模式（seckill），默认采用秒杀模式'
     # flag = True
